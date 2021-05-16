@@ -1,0 +1,102 @@
+version: "3.7"
+
+services:
+  vpn:
+    container_name: vpn
+    image: thrnz/docker-wireguard-pia:latest
+    volumes:
+        - pia/data/config:/pia
+    cap_add:
+        - NET_ADMIN
+        - SYS_MODULE
+    ports:
+        - 8888:8888/tcp
+        - 8388:8388/tcp
+        - 8388:8388/udp
+        - 9091:9091 # Transmission
+        - 7878:7878 # Radarr
+        - 8989:8989 # Sonarr
+        - 9117:9117 # Jackett
+    environment:
+        - LOCAL_NETWORK=
+        - LOC=us_atlanta
+        - USER=
+        - PASS=
+        - PUID=1000
+        - PGID=1000
+        - TZ=America/Chicago
+    sysctls:
+        - net.ipv4.conf.all.src_valid_mark=1
+        - net.ipv6.conf.default.disable_ipv6=1
+        - net.ipv6.conf.all.disable_ipv6=1
+        - net.ipv6.conf.lo.disable_ipv6=1
+    healthcheck:
+        test: ping -c 1 www.google.com || exit 1
+        interval: 30s
+        timeout: 10s
+        retries: 3
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+    logging:
+     options:
+       max-size: 25m
+       max-file: "1"
+  transmission:
+    image: linuxserver/transmission:latest
+    container_name: transmission
+    network_mode: "service:vpn"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Chicago
+      - TRANSMISSION_WEB_HOME=/combustion-release/
+    volumes:
+      - transmission/data/config:/config
+      - /mnt/northflix/downloads:/downloads
+      - /mnt/northflix/downloads/watch:/watch
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+    logging:
+     options:
+       max-size: 25m
+       max-file: "1"
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: sonarr
+    network_mode: "service:vpn"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Chicago
+    volumes:
+      - sonarr/data/config:/config
+      - /mnt/northflix/tv:/tv
+      - /mnt/northflix/downloads:/downloads
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+    logging:
+     options:
+       max-size: 25m
+       max-file: "1"
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: radarr
+    network_mode: "service:vpn"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Chicago
+    volumes:
+      - radarr/data/config:/config
+      - /mnt/northflix/movie:/movies
+      - /mnt/northflix/downloads:/downloads
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+    logging:
+     options:
+       max-size: 25m
+       max-file: "1"
