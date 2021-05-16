@@ -11,7 +11,7 @@ services:
       - 8000:8000
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - data/config:/data
+      - ./data/config:/data
     logging:
      options:
        max-size: 25m

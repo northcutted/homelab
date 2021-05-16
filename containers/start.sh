@@ -17,3 +17,4 @@ do
     $cmd pull
     $cmd up -d
 done
+

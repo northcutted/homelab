@@ -9,7 +9,7 @@ services:
       - PGID=1000
       - TZ=America/Chicago
     volumes:
-     - data/config:/config
+     - ./data/config:/config
     ports:
      - 9983:80
     security_opt:

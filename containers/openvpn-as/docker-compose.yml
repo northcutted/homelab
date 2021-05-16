@@ -12,7 +12,7 @@ services:
       - TZ=America/Chicago
       - INTERFACE=eth0
     volumes:
-      - data/config:/config
+      - ./data/config:/config
     ports:
       - 943:943
       - 9443:9443
@@ -25,4 +25,3 @@ services:
      options:
        max-size: 25m
        max-file: "1"
-       

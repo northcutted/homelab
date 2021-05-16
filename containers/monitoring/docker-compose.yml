@@ -7,7 +7,7 @@ services:
     ports:
       - 3000:3000
     volumes:
-      - grafana/data/config:/var/lib/grafana
+      - ./grafana/data/config:/var/lib/grafana
     security_opt:
       - apparmor:unconfined
     restart: unless-stopped
@@ -23,7 +23,7 @@ services:
     command:
       - --config.file=/etc/prometheus.yml
     volumes:
-      - prometheus/data/prometheus.yml:/etc/prometheus.yml
+      - ./prometheus/data/prometheus.yml:/etc/prometheus.yml
     security_opt:
       - apparmor:unconfined
     restart: unless-stopped
@@ -37,7 +37,7 @@ services:
     ports:
       - 9221:9221
     volumes:
-      - prometheus-pve-exporter/data/pve.yml:/etc/pve.yml
+      - ./prometheus-pve-exporter/data/pve.yml:/etc/pve.yml
     security_opt:
       - apparmor:unconfined
     restart: unless-stopped

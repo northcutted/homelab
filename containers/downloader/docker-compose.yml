@@ -5,7 +5,7 @@ services:
     container_name: vpn
     image: thrnz/docker-wireguard-pia:latest
     volumes:
-        - pia/data/config:/pia
+        - ./pia/data/config:/pia
     cap_add:
         - NET_ADMIN
         - SYS_MODULE
@@ -52,9 +52,27 @@ services:
       - TZ=America/Chicago
       - TRANSMISSION_WEB_HOME=/combustion-release/
     volumes:
-      - transmission/data/config:/config
+      - ./transmission/data/config:/config
       - /mnt/northflix/downloads:/downloads
       - /mnt/northflix/downloads/watch:/watch
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+    logging:
+     options:
+       max-size: 25m
+       max-file: "1"
+  jackett:
+    image: linuxserver/jackett:latest
+    container_name: jackett
+    network_mode: "service:vpn"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Chicago
+    volumes:
+      - ./jackett/data/config:/config
+      - /mnt/northflix/downloads:/downloads
     security_opt:
       - apparmor:unconfined
     restart: unless-stopped
@@ -71,7 +89,7 @@ services:
       - PGID=1000
       - TZ=America/Chicago
     volumes:
-      - sonarr/data/config:/config
+      - ./sonarr/data/config:/config
       - /mnt/northflix/tv:/tv
       - /mnt/northflix/downloads:/downloads
     security_opt:
@@ -90,7 +108,7 @@ services:
       - PGID=1000
       - TZ=America/Chicago
     volumes:
-      - radarr/data/config:/config
+      - ./radarr/data/config:/config
       - /mnt/northflix/movie:/movies
       - /mnt/northflix/downloads:/downloads
     security_opt:
