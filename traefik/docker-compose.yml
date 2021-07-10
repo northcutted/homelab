@@ -14,30 +14,34 @@ services:
       - 80:80
       - 443:443
     environment:
-      - CF_API_EMAIL=user@example.com
-      - CF_API_KEY=YOUR_API_KEY
+      - CF_API_EMAIL={{ CF_API_EMAIL }}
+      - CF_API_KEY={{ CF_API_KEY }}
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./data/traefik.yml:/traefik.yml:ro
-      - ./data/acme.json:/acme.json
       - ./data/config.yml:/config.yml:ro
+      - ./data/acme.json:/acme.json
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.traefik.entrypoints=http"
-      - "traefik.http.routers.traefik.rule=Host(`traefik.northcutt.dev`)"
-      - "traefik.http.middlewares.traefik-auth.basicauth.users=USER:BASIC_AUTH_PASSWORD"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.{{ DOMAIN_NAME }}`)"
+      # To generate basic auth password: install apache2-utils and then  `echo $(htpasswd -nb admin PASSWORD) | sed -e s/\\$/\\$\\$/g` 
+      - "traefik.http.middlewares.traefik-auth.basicauth.users={{ TRAEFIK_DASHBOARD_BASIC_AUTH }}"
       - "traefik.http.middlewares.traefik-https-redirect.redirectscheme.scheme=https"
       - "traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https"
       - "traefik.http.routers.traefik.middlewares=traefik-https-redirect"
       - "traefik.http.routers.traefik-secure.entrypoints=https"
-      - "traefik.http.routers.traefik-secure.rule=Host(`traefik.northcutt.dev`)"
+      - "traefik.http.routers.traefik-secure.rule=Host(`traefik.{{ DOMAIN_NAME }}`)"
       - "traefik.http.routers.traefik-secure.middlewares=traefik-auth"
       - "traefik.http.routers.traefik-secure.tls=true"
       - "traefik.http.routers.traefik-secure.tls.certresolver=cloudflare"
-      - "traefik.http.routers.traefik-secure.tls.domains[0].main=northcutt.dev"
-      - "traefik.http.routers.traefik-secure.tls.domains[0].sans=*.northcutt.dev"
+      - "traefik.http.routers.traefik-secure.tls.domains[0].main={{ DOMAIN_NAME }}"
+      - "traefik.http.routers.traefik-secure.tls.domains[0].sans=*.{{ DOMAIN_NAME }}"
       - "traefik.http.routers.traefik-secure.service=api@internal"
+    dns:
+       - 1.1.1.1
+       - 1.0.0.1
 
 networks:
   proxy:

@@ -4,7 +4,6 @@
 declare -a COMPOSE_FILES=(
     'traefik/docker-compose.yml',
     'openvpn-as/docker-compose.yml',
-    'organizr/docker-compose.yml',
     'downloader/docker-compose.yml',
     'monitoring/docker-compose.yml'
 )

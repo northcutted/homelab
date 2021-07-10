@@ -1,0 +1,5 @@
+default:
+  user: monitoring@pam
+  token_name: "monitoring"
+  token_value: "{{ PVE_MONITORING_USER_TOKEN }}"
+  verify_ssl: false

@@ -17,8 +17,6 @@ services:
       - 943:943
       - 9443:9443
       - 1194:1194/udp
-    security_opt:
-      - apparmor:unconfined
     restart: unless-stopped
     network_mode: bridge
     logging:
