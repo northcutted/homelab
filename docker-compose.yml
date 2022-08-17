@@ -1,0 +1,338 @@
+version: "3.8"
+
+x-defaults: &defaults
+  restart: unless-stopped
+  logging:
+    driver: loki
+    options:
+      loki-url: "http://localhost:3100/loki/api/v1/push"
+
+services:
+  qbittorrentvpn:
+    <<: *defaults
+    container_name: qbittorrentvpn
+    image: binhex/arch-qbittorrentvpn:latest
+    networks:
+      - docker
+    ports:
+      - ${QBITTORRENTVPN_PORT_8080}:8080/tcp
+      - ${QBITTORRENTVPN_PORT_8118}:8118/tcp
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=022
+      - DEBUG=false
+      - VPN_ENABLED=${VPN_ENABLE}
+      - VPN_CLIENT=openvpn
+      - VPN_USER=${VPN_USER}
+      - VPN_PASS=${VPN_PASS}
+      - VPN_PROV=${VPN_PROV}
+      - STRICT_PORT_FORWARD=yes
+      - LAN_NETWORK=${LAN_NETWORK}
+      - NAME_SERVERS=209.222.18.222,84.200.69.80,37.235.1.174,1.1.1.1,209.222.18.218,37.235.1.177,84.200.70.40,1.0.0.1
+      - WEBUI_PORT=${QBITTORRENTVPN_PORT_8080}
+      - ENABLE_PRIVOXY=${QBITTORRENTVPN_ENABLE_PRIVOXY}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/qbittorrentvpn:/config:rw
+      - ${DOCKERSTORAGEDIR}/torrents:/data/torrents:rw
+  prowlarr:
+    <<: *defaults
+    container_name: prowlarr
+    image: cr.hotio.dev/hotio/prowlarr:nightly
+    networks:
+      - docker
+    ports:
+      - "9696:9696"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/prowlarr:/config:rw
+  radarr:
+    <<: *defaults
+    container_name: radarr
+    image: cr.hotio.dev/hotio/radarr:latest
+    networks:
+      - docker
+    ports:
+      - 7878:7878
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/radarr:/config
+      - ${DOCKERSTORAGEDIR}:/data
+  sonarr:
+    <<: *defaults
+    container_name: sonarr
+    image: cr.hotio.dev/hotio/sonarr:latest
+    networks:
+      - docker
+    ports:
+      - 8989:8989
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/sonarr:/config
+      - ${DOCKERSTORAGEDIR}:/data
+  bazarr:
+    <<: *defaults
+    container_name: bazarr
+    image: cr.hotio.dev/hotio/bazarr:nightly
+    networks:
+      - docker
+    ports:
+      - 6767:6767
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/bazarr:/config
+      - ${DOCKERSTORAGEDIR}/media:/data/media
+  plex:
+    <<: *defaults
+    container_name: plex
+    image: cr.hotio.dev/hotio/plex
+    networks:
+      - docker
+    ports:
+      - 32400:32400
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=002
+      - ARGS=
+      - PLEX_CLAIM=${PLEX_CLAIM}
+      - ADVERTISE_IP=${PLEX_ADVERTISE_IP}
+      - ALLOWED_NETWORKS=10.23.0.0/16
+      - PLEX_PASS=${PLEX_PASS}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/plex:/config:rw
+      - ${DOCKERSTORAGEDIR}/media:/data/media:rw
+  nginx-proxy-manager:
+    <<: *defaults
+    container_name: nginx-proxy-manager
+    image: 'jc21/nginx-proxy-manager:latest'
+    networks:
+      docker:
+      dockervlan:
+        ipv4_address: 192.168.23.3
+    ports:
+      - '80'
+      - '443'
+      - '81'
+    environment:
+      DB_MYSQL_HOST: "npm-db"
+      DB_MYSQL_PORT: 3306
+      DB_MYSQL_USER: "npm"
+      DB_MYSQL_PASSWORD: ${NPM_DB_PASSWORD}
+      DB_MYSQL_NAME: "npm"
+      # Uncomment this if IPv6 is not enabled on your host
+      DISABLE_IPV6: 'true'
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/reverse-proxy/data:/data
+      - ${DOCKERCONFDIR}/reverse-proxy/letsencrypt:/etc/letsencrypt
+    depends_on:
+      - npm-db
+      - pihole
+  npm-db:
+    <<: *defaults
+    container_name: npm-db
+    image: 'jc21/mariadb-aria:latest'
+    networks:
+      - docker
+    environment:
+      MYSQL_ROOT_PASSWORD: ${NPM_DB_PASSWORD}
+      MYSQL_DATABASE: 'npm-db'
+      MYSQL_USER: 'npm'
+      MYSQL_PASSWORD: ${NPM_DB_PASSWORD}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+    volumes:
+      - ${DOCKERCONFDIR}/reverse-proxy/mysql:/var/lib/mysql
+  pihole:
+    <<: *defaults
+    container_name: pihole
+    image: cbcrowe/pihole-unbound:latest
+    hostname: pihole
+    domainname: pihole.northcutt.dev
+    networks:
+      docker:
+      dockervlan:
+        ipv4_address: 192.168.23.2
+    ports:
+      - 53/tcp
+      - 53/udp
+      - 67/udp
+      - 80/tcp
+    environment:
+      - FTLCONF_REPLY_ADDR4=192.168.23.200
+      - TZ=${TZ}
+      - WEBPASSWORD=${NPM_DB_PASSWORD}
+      - WEBTHEME=default-darker
+      - PIHOLE_DNS_=127.0.0.1#5335
+      - DNSSEC="true"
+      - ServerIP=0.0.0.0
+      - DNSMASQ_LISTENING=all
+      - DNSMASQ_USER=root
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/pihole/pihole:/etc/pihole:rw
+      - ${DOCKERCONFDIR}/pihole/dnsmasq.d:/etc/dnsmasq.d:rw
+  minio:
+    <<: *defaults
+    container_name: minio
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    networks:
+      - docker
+    expose:
+      - "9000"
+      - "9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: ${NPM_DB_PASSWORD}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    volumes:
+      - /volume1/S3/:/data:rw
+      - ${DOCKERCONFDIR}:/root/.minio:rw
+  homeassistant:
+    <<: *defaults
+    container_name: homeassistant
+    image: "ghcr.io/home-assistant/home-assistant:stable"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
+    volumes:
+      - ${DOCKERCONFDIR}/homeassistant/config:/config
+      - /etc/localtime:/etc/localtime:ro
+    privileged: false
+    network_mode: host
+  cloudflared:
+    <<: *defaults
+    container_name: cloudflared
+    image: cloudflare/cloudflared:2022.7.1
+    networks:
+      - tunnel
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+    entrypoint: "cloudflared tunnel --no-autoupdate run --token ${CF_TOKEN}"
+  overseerr:
+    <<: *defaults
+    image: lscr.io/linuxserver/overseerr
+    container_name: overseerr
+    networks:
+      - tunnel
+      - docker
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${DOCKERCONFDIR}/overseerr/config:/config
+    ports:
+      - 5055:5055
+  loki:
+    container_name: loki
+    image: grafana/loki:latest
+    user: ${PUID}
+    volumes:
+      - ${DOCKERCONFDIR}/loki:/etc/loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    networks:
+      - loki
+  promtail:
+    container_name: promtail
+    image: grafana/promtail:latest
+    volumes:
+      - /var/log:/var/log
+      - ${DOCKERCONFDIR}/promtail:/etc/promtail
+    # ports:
+    #   - "1514:1514" # this is only needed if you are going to send syslogs
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail-config.yml
+    networks:
+      - loki
+  grafana:
+    <<: *defaults
+    container_name: grafana
+    image: grafana/grafana:latest
+    user: ${PUID}
+    volumes:
+    - ${DOCKERCONFDIR}/grafana:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - loki
+      - docker
+  tautulli:
+    <<: *defaults
+    image: lscr.io/linuxserver/tautulli:latest
+    container_name: tautulli
+    networks:
+      - docker
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${DOCKERCONFDIR}/tautulli/config:/config
+    ports:
+      - 8181:8181
+    restart: unless-stopped
+networks:
+  tunnel:
+    driver: bridge
+    name: tunnel
+  docker:
+    driver: bridge
+    name: docker
+  loki:
+    driver: bridge
+    name: loki
+  dockervlan:
+    name: dockervlan
+    driver: macvlan
+    driver_opts:
+      parent: eth0
+    ipam:
+      config:
+        - subnet: "192.168.23.0/24"
+          ip_range: "192.168.23.3/30"
+          gateway: "192.168.23.1"
+
