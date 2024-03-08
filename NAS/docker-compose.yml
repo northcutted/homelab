@@ -1,0 +1,167 @@
+version: "3.8"
+
+x-defaults: &defaults
+  restart: unless-stopped
+  logging:
+    driver: loki
+    options:
+      loki-url: "http://192.168.nope.nope:3100/loki/api/v1/push"
+
+services:
+  cadvisor:
+    <<: *defaults
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor-synology
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /volume1/@docker:/var/lib/docker:ro
+      - /dev/vg1:/dev/disk:ro
+    ports:
+      - "8888:8080"
+    privileged: true
+    devices:
+      - /dev/kmsg
+  nginx-proxy-manager:
+    <<: *defaults
+    container_name: nginx-proxy-manager
+    image: 'jc21/nginx-proxy-manager:latest'
+    networks:
+      docker:
+      dockervlan:
+        ipv4_address: 192.168.nope.nope
+    ports:
+      - '80'
+      - '443'
+      - '81'
+    environment:
+      DB_MYSQL_HOST: "npm-db"
+      DB_MYSQL_PORT: 3306
+      DB_MYSQL_USER: "npm"
+      DB_MYSQL_PASSWORD: ${NPM_DB_PASSWORD}
+      DB_MYSQL_NAME: "npm"
+      # Uncomment this if IPv6 is not enabled on your host
+      DISABLE_IPV6: 'true'
+      TZ: ${TZ}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/reverse-proxy/data:/data
+      - ${DOCKERCONFDIR}/reverse-proxy/letsencrypt:/etc/letsencrypt
+    depends_on:
+      - npm-db
+      - pihole
+  npm-db:
+    <<: *defaults
+    container_name: npm-db
+    image: 'jc21/mariadb-aria:latest'
+    networks:
+      - docker
+    environment:
+      MYSQL_ROOT_PASSWORD: ${NPM_DB_PASSWORD}
+      MYSQL_DATABASE: 'npm-db'
+      MYSQL_USER: 'npm'
+      MYSQL_PASSWORD: ${NPM_DB_PASSWORD}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+    volumes:
+      - ${DOCKERCONFDIR}/reverse-proxy/mysql:/var/lib/mysql
+  pihole:
+    <<: *defaults
+    container_name: pihole
+    image: cbcrowe/pihole-unbound:latest
+    hostname: pihole
+    domainname: pihole.northcutt.dev
+    networks:
+      docker:
+      dockervlan:
+        ipv4_address: 192.168.nope.nope
+    ports:
+      - 53/tcp
+      - 53/udp
+      - 67/udp
+      - 80/tcp
+    environment:
+      - FTLCONF_REPLY_ADDR4=192.168.nope.nope
+      - TZ=${TZ}
+      - WEBPASSWORD=${NPM_DB_PASSWORD}
+      - WEBTHEME=default-darker
+      - PIHOLE_DNS_=127.0.0.1#5335
+      - DNSSEC="true"
+      - ServerIP=0.0.0.0
+      - DNSMASQ_LISTENING=all
+      - DNSMASQ_USER=root
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/pihole/pihole:/etc/pihole:rw
+      - ${DOCKERCONFDIR}/pihole/dnsmasq.d:/etc/dnsmasq.d:rw
+  minio:
+    <<: *defaults
+    container_name: minio
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    networks:
+      - docker
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: ${NPM_DB_PASSWORD}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - /volume1/S3/:/data:rw
+      - ${DOCKERCONFDIR}:/root/.minio:rw
+  homeassistant:
+    <<: *defaults
+    container_name: homeassistant
+    image: "ghcr.io/home-assistant/home-assistant:stable"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
+    volumes:
+      - ${DOCKERCONFDIR}/homeassistant/config:/config
+      - /etc/localtime:/etc/localtime:ro
+    privileged: false
+    network_mode: host
+  node-exporter:
+    <<: *defaults
+    privileged: true
+    image: prom/node-exporter
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.ignored-mount-points"
+      - "^/(rootfs/)?(dev|etc|host|proc|run|sys|volume1)($$|/)"
+networks:
+  docker:
+    driver: bridge
+    name: docker
+  dockervlan:
+    name: dockervlan
+    driver: macvlan
+    driver_opts:
+      parent: eth0
+    ipam:
+      config:
+        - subnet: "192.168.nope.nope/24"
+          ip_range: "192.168.nope.nope/30"
+          gateway: "192.168.nope.nope"
