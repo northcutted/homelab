@@ -1,11 +1,9 @@
-version: "3.8"
-
 x-defaults: &defaults
   restart: unless-stopped
   logging:
     driver: loki
     options:
-      loki-url: "http://192.168.nope.nope:3100/loki/api/v1/push"
+      loki-url: "http://host-or-ip:3100/loki/api/v1/push"
 
 services:
   cadvisor:
@@ -23,79 +21,6 @@ services:
     privileged: true
     devices:
       - /dev/kmsg
-  nginx-proxy-manager:
-    <<: *defaults
-    container_name: nginx-proxy-manager
-    image: 'jc21/nginx-proxy-manager:latest'
-    networks:
-      docker:
-      dockervlan:
-        ipv4_address: 192.168.nope.nope
-    ports:
-      - '80'
-      - '443'
-      - '81'
-    environment:
-      DB_MYSQL_HOST: "npm-db"
-      DB_MYSQL_PORT: 3306
-      DB_MYSQL_USER: "npm"
-      DB_MYSQL_PASSWORD: ${NPM_DB_PASSWORD}
-      DB_MYSQL_NAME: "npm"
-      # Uncomment this if IPv6 is not enabled on your host
-      DISABLE_IPV6: 'true'
-      TZ: ${TZ}
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - ${DOCKERCONFDIR}/reverse-proxy/data:/data
-      - ${DOCKERCONFDIR}/reverse-proxy/letsencrypt:/etc/letsencrypt
-    depends_on:
-      - npm-db
-      - pihole
-  npm-db:
-    <<: *defaults
-    container_name: npm-db
-    image: 'jc21/mariadb-aria:latest'
-    networks:
-      - docker
-    environment:
-      MYSQL_ROOT_PASSWORD: ${NPM_DB_PASSWORD}
-      MYSQL_DATABASE: 'npm-db'
-      MYSQL_USER: 'npm'
-      MYSQL_PASSWORD: ${NPM_DB_PASSWORD}
-      PUID: ${PUID}
-      PGID: ${PGID}
-      TZ: ${TZ}
-    volumes:
-      - ${DOCKERCONFDIR}/reverse-proxy/mysql:/var/lib/mysql
-  pihole:
-    <<: *defaults
-    container_name: pihole
-    image: cbcrowe/pihole-unbound:latest
-    hostname: pihole
-    domainname: pihole.northcutt.dev
-    networks:
-      docker:
-      dockervlan:
-        ipv4_address: 192.168.nope.nope
-    ports:
-      - 53/tcp
-      - 53/udp
-      - 67/udp
-      - 80/tcp
-    environment:
-      - FTLCONF_REPLY_ADDR4=192.168.nope.nope
-      - TZ=${TZ}
-      - WEBPASSWORD=${NPM_DB_PASSWORD}
-      - WEBTHEME=default-darker
-      - PIHOLE_DNS_=127.0.0.1#5335
-      - DNSSEC="true"
-      - ServerIP=0.0.0.0
-      - DNSMASQ_LISTENING=all
-      - DNSMASQ_USER=root
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - ${DOCKERCONFDIR}/pihole/pihole:/etc/pihole:rw
-      - ${DOCKERCONFDIR}/pihole/dnsmasq.d:/etc/dnsmasq.d:rw
   minio:
     <<: *defaults
     container_name: minio
@@ -120,21 +45,6 @@ services:
     volumes:
       - /volume1/S3/:/data:rw
       - ${DOCKERCONFDIR}:/root/.minio:rw
-  homeassistant:
-    <<: *defaults
-    container_name: homeassistant
-    image: "ghcr.io/home-assistant/home-assistant:stable"
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - TZ=${TZ}
-    devices:
-      - /dev/ttyACM0:/dev/ttyACM0
-    volumes:
-      - ${DOCKERCONFDIR}/homeassistant/config:/config
-      - /etc/localtime:/etc/localtime:ro
-    privileged: false
-    network_mode: host
   node-exporter:
     <<: *defaults
     privileged: true
@@ -151,17 +61,60 @@ services:
       - "--path.sysfs=/host/sys"
       - "--collector.filesystem.ignored-mount-points"
       - "^/(rootfs/)?(dev|etc|host|proc|run|sys|volume1)($$|/)"
+  sabnzbd:
+    <<: *defaults
+    container_name: sabnzbd
+    image: ghcr.io/hotio/sabnzbd:latest
+    ports:
+      - 8080:8080
+      - 9090:9090
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/sabnzbd:/config:rw
+      - ${DOCKERSTORAGEDIR}/usenet:${STORAGE_ROOT}/usenet:rw
+    networks:
+      - docker
+  transmission-openvpn:
+    <<: *defaults
+    container_name: transmission
+    image: haugene/transmission-openvpn
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/transmission:/config:rw
+      - ${DOCKERSTORAGEDIR}/torrents:${STORAGE_ROOT}/torrents:rw
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    environment:
+      - OPENVPN_PROVIDER=PIA
+      - OPENVPN_CONFIG=netherlands
+      - OPENVPN_USERNAME=${VPN_USER}
+      - OPENVPN_PASSWORD=${VPN_PASS}
+      - OPENVPN_OPTS=--inactive 3600 --ping 10 --ping-exit 60
+      - LOCAL_NETWORK=${LAN_NETWORK}
+      - TRANSMISSION_WEB_UI=kettu
+      - TRANSMISSION_RATIO_LIMIT=0
+      - TRANSMISSION_RATIO_LIMIT_ENABLED=true
+      - TRANSMISSION_DOWNLOAD_DIR=${STORAGE_ROOT}/torrents/completed
+      - TRANSMISSION_INCOMPLETE_DIR=${STORAGE_ROOT}/torrents/incomplete
+      - TRANSMISSION_WATCH_DIR=${STORAGE_ROOT}/torrents/watch
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - UMASK=022
+    ports:
+      - '9091:9091'
+    networks:
+      - docker
 networks:
   docker:
     driver: bridge
     name: docker
-  dockervlan:
-    name: dockervlan
-    driver: macvlan
-    driver_opts:
-      parent: eth0
-    ipam:
-      config:
-        - subnet: "192.168.nope.nope/24"
-          ip_range: "192.168.nope.nope/30"
-          gateway: "192.168.nope.nope"

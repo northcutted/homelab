@@ -1,5 +1,3 @@
-version: "3.8"
-
 x-defaults: &defaults
   restart: unless-stopped
   logging:
@@ -8,76 +6,125 @@ x-defaults: &defaults
       loki-url: "http://localhost:3100/loki/api/v1/push"
 
 services:
-  cadvisor:
+  ## Media Services
+  plex:
     <<: *defaults
-    container_name: cadvisor_docker
-    image: gcr.io/cadvisor/cadvisor:latest
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-      - /dev/disk/:/dev/disk:ro
-    ports:
-      - "8888:8080"
-    privileged: true
-    devices:
-      - /dev/kmsg
+    container_name: plex
+    image: ghcr.io/hotio/plex:latest
     networks:
       - docker
-  transmission-openvpn:
-    <<: *defaults
-    container_name: transmission
-    image: haugene/transmission-openvpn
-    cap_add:
-      - NET_ADMIN
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - ${DOCKERCONFDIR}/transmission:/config:rw
-      - ${DOCKERSTORAGEDIR}/torrents:/northflix/torrents:rw
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
-    devices:
-      - "/dev/net/tun:/dev/net/tun"
+    ports:
+      - "32400:32400"
     environment:
-      - OPENVPN_PROVIDER=PIA
-      - OPENVPN_CONFIG=netherlands
-      - OPENVPN_USERNAME=${VPN_USER}
-      - OPENVPN_PASSWORD=${VPN_PASS}
-      - OPENVPN_OPTS=--inactive 3600 --ping 10 --ping-exit 60
-      - LOCAL_NETWORK=${LAN_NETWORK}
-      - TRANSMISSION_WEB_UI=kettu
-      - TRANSMISSION_RATIO_LIMIT=0
-      - TRANSMISSION_RATIO_LIMIT_ENABLED=true
-      - TRANSMISSION_DOWNLOAD_DIR=/northflix/torrents/completed
-      - TRANSMISSION_INCOMPLETE_DIR=/northflix/torrents/incomplete
-      - TRANSMISSION_WATCH_DIR=/northflix/torrents/watch
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-      - UMASK=022
-    ports:
-      - '9091:9091'
+      - UMASK=002
+      - ARGS=
+      - PLEX_CLAIM_TOKEN=${PLEX_CLAIM}
+      - PLEX_ADVERTISE_URL=${PLEX_ADVERTISE_IP}
+      - ALLOWED_NETWORKS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      - PLEX_NO_AUTH_NETWORKS=192.168.1.0/24
+      - PLEX_PASS=${PLEX_PASS}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/plex:/config:rw
+      - ${DOCKERSTORAGEDIR}/media:/northflix/media:rw
+      - /tmp/plex:/transcode
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:32400/web/index.html" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+  radarr:
+    <<: *defaults
+    container_name: radarr
+    image: ghcr.io/hotio/radarr:latest
     networks:
       - docker
-  sabnzbd:
-    <<: *defaults
-    container_name: sabnzbd
-    image: ghcr.io/hotio/sabnzbd:latest
     ports:
-      - 8080:8080
-      - 9090:9090
+      - "7878:7878"
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - ${DOCKERCONFDIR}/sabnzbd:/config:rw
-      - ${DOCKERSTORAGEDIR}/usenet:/northflix/usenet:rw
+      - ${DOCKERCONFDIR}/radarr:/config
+      - ${DOCKERSTORAGEDIR}:/northflix
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://radarr:7878/api/v3/system/status | grep -E '^[2-4][0-9]{2}$' || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.2"
+          memory: 256M
+
+  sonarr:
+    <<: *defaults
+    container_name: sonarr
+    image: ghcr.io/hotio/sonarr:latest
     networks:
       - docker
+    ports:
+      - "8989:8989"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/sonarr:/config
+      - ${DOCKERSTORAGEDIR}:/northflix
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://sonarr:8989/api/system/status | grep -E '^[2-4][0-9]{2}$' || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.2"
+          memory: 256M
+
+  bazarr:
+    <<: *defaults
+    container_name: bazarr
+    image: ghcr.io/hotio/bazarr:nightly
+    networks:
+      - docker
+    ports:
+      - "6767:6767"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/bazarr:/config
+      - ${DOCKERSTORAGEDIR}/media:/northflix/media
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.1"
+          memory: 128M
+
   prowlarr:
     <<: *defaults
     container_name: prowlarr
@@ -94,91 +141,19 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${DOCKERCONFDIR}/prowlarr:/config:rw
-  radarr:
-    <<: *defaults
-    container_name: radarr
-    image: ghcr.io/hotio/radarr:latest
-    networks:
-      - docker
-    ports:
-      - 7878:7878
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - TZ=${TZ}
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - ${DOCKERCONFDIR}/radarr:/config
-      - ${DOCKERSTORAGEDIR}:/northflix
-  sonarr:
-    <<: *defaults
-    container_name: sonarr
-    image: ghcr.io/hotio/sonarr:latest
-    networks:
-      - docker
-    ports:
-      - 8989:8989
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - TZ=${TZ}
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - ${DOCKERCONFDIR}/sonarr:/config
-      - ${DOCKERSTORAGEDIR}:/northflix
-  bazarr:
-    <<: *defaults
-    container_name: bazarr
-    image: ghcr.io/hotio/bazarr:nightly
-    networks:
-      - docker
-    ports:
-      - 6767:6767
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - TZ=${TZ}
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - ${DOCKERCONFDIR}/bazarr:/config
-      - ${DOCKERSTORAGEDIR}/media:/northflix/media
-  plex:
-    <<: *defaults
-    container_name: plex
-    image: ghcr.io/hotio/plex
-    networks:
-      - docker
-    ports:
-      - 32400:32400
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - TZ=${TZ}
-      - UMASK=002
-      - ARGS=
-      - PLEX_CLAIM_TOKEN=${PLEX_CLAIM}
-      - PLEX_ADVERTISE_URL=${PLEX_ADVERTISE_IP}
-      - ALLOWED_NETWORKS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
-      - PLEX_NO_AUTH_NETWORKS=${SUBNET HERE}
-      - PLEX_PASS=${PLEX_PASS}
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - ${DOCKERCONFDIR}/plex:/config:rw
-      - ${DOCKERSTORAGEDIR}/media:/northflix/media:rw
-  cloudflared:
-    <<: *defaults
-    container_name: cloudflared
-    image: cloudflare/cloudflared:latest
-    networks:
-      - tunnel
-    dns:
-      - 1.1.1.1
-      - 1.0.0.1
-    entrypoint: "cloudflared tunnel --no-autoupdate run --token ${CF_TOKEN}"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.1"
+          memory: 128M
+
   overseerr:
     <<: *defaults
-    image: lscr.io/linuxserver/overseerr
     container_name: overseerr
+    image: lscr.io/linuxserver/overseerr:latest
     networks:
       - tunnel
       - docker
@@ -189,7 +164,39 @@ services:
     volumes:
       - ${DOCKERCONFDIR}/overseerr/config:/config
     ports:
-      - 5055:5055
+      - "5055:5055"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:5055/api/v1/system/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  metube:
+    <<: *defaults
+    container_name: metube
+    image: alexta69/metube:latest
+    networks:
+      - docker
+    environment:
+      - DELETE_FILE_ON_TRASHCAN=false
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    ports:
+      - "9091:8081"
+    volumes:
+      - ${DOCKERSTORAGEDIR}/northflix/media/youtube/downloads:/downloads
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 128M
+
+  ## Monitoring Services
   loki:
     container_name: loki
     image: grafana/loki:latest
@@ -198,58 +205,78 @@ services:
       - ${DOCKERCONFDIR}/loki:/etc/loki
     ports:
       - "3100:3100"
-    restart: unless-stopped
     command: -config.file=/etc/loki/loki-config.yml
     networks:
       - loki
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3100/ready || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   promtail:
     container_name: promtail
     image: grafana/promtail:latest
     volumes:
       - /var/log:/var/log
       - ${DOCKERCONFDIR}/promtail:/etc/promtail
-    # ports:
-    #   - "1514:1514" # this is only needed if you are going to send syslogs
-    restart: unless-stopped
     command: -config.file=/etc/promtail/promtail-config.yml
     networks:
       - loki
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://promtail:9080/metrics | grep -E '^[2-4][0-9]{2}$' || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   grafana:
     <<: *defaults
     container_name: grafana
     image: grafana/grafana:latest
     user: ${PUID}
     volumes:
-    - ${DOCKERCONFDIR}/grafana:/var/lib/grafana
+      - ${DOCKERCONFDIR}/grafana:/var/lib/grafana
     ports:
       - "3000:3000"
     networks:
       - loki
       - docker
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3000/api/health" ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   prometheus:
-      <<: *defaults
-      image: prom/prometheus
-      container_name: prometheus
-      user: "${PUID}:${PGID}"
-      environment:
-        - PUID=${PUID}
-        - PGID=${PGID}
-        - TZ=${TZ}
-      networks:
-        - loki
-        - docker
-      ports:
-        - "9092:9090"
-      volumes:
-        - ${DOCKERCONFDIR}/prometheus/configs/prometheus.yml:/etc/prometheus/prometheus.yml
-        - ${DOCKERCONFDIR}/prometheus/data/prometheus:/prometheus
+    <<: *defaults
+    container_name: prometheus
+    image: prom/prometheus:latest
+    user: "${PUID}:${PGID}"
+    environment:
+      - TZ=${TZ}
+    networks:
+      - loki
+      - docker
+    ports:
+      - "9092:9090"
+    volumes:
+      - ${DOCKERCONFDIR}/prometheus/configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ${DOCKERCONFDIR}/prometheus/data/prometheus:/prometheus
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://prometheus:9090/-/healthy || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   alertmanager:
     <<: *defaults
-    image: prom/alertmanager
     container_name: alertmanager
+    image: prom/alertmanager:latest
     environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
       - TZ=${TZ}
     networks:
       - loki
@@ -258,11 +285,66 @@ services:
       - "9093:9093"
     volumes:
       - ${DOCKERCONFDIR}/alertmanager/data/alertmanager:/alertmanager
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://alertmanager:9093/-/health | grep -E '^[2-4][0-9]{2}$' || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  unpoller:
+    <<: *defaults
+    container_name: unpoller
+    image: ghcr.io/unpoller/unpoller:latest
+    networks:
+      - docker
+    ports:
+      - "9130:9130"
+    environment:
+      - UP_INFLUXDB_DISABLE=true
+      - UP_POLLER_DEBUG=true
+      - UP_UNIFI_DYNAMIC=true
+      - UP_PROMETHEUS_HTTP_LISTEN=0.0.0.0:9130
+      - UP_PROMETHEUS_NAMESPACE=unpoller
+      - UP_LOKI_DISABLE=false
+      - UP_LOKI_URL=http://localhost:3100
+      - UP_UNIFI_CONTROLLER_0_PASS=${UP_UNIFI_CONTROLLER_0_PASS}
+      - UP_UNIFI_CONTROLLER_0_SAVE_ALARMS=true
+      - UP_UNIFI_CONTROLLER_0_SAVE_ANOMALIES=true
+      - UP_UNIFI_CONTROLLER_0_SAVE_DPI=true
+      - UP_UNIFI_CONTROLLER_0_SAVE_EVENTS=true
+      - UP_UNIFI_CONTROLLER_0_SAVE_IDS=true
+      - UP_UNIFI_CONTROLLER_0_SAVE_SITES=true
+      - UP_UNIFI_CONTROLLER_0_URL=https://192.168.1.1
+      - UP_UNIFI_CONTROLLER_0_USER=unifipoller
+
+  tautulli:
+    <<: *defaults
+    container_name: tautulli
+    image: lscr.io/linuxserver/tautulli:latest
+    networks:
+      - docker
+    ports:
+      - "8181:8181"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${DOCKERCONFDIR}/tautulli/config:/config
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8181/api/status" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  ## Host Metrics
   node-exporter:
     <<: *defaults
-    privileged: true
-    image: prom/node-exporter
     container_name: node-exporter
+    image: prom/node-exporter:latest
+    privileged: true
     networks:
       - loki
     ports:
@@ -276,21 +358,111 @@ services:
       - "--path.sysfs=/host/sys"
       - "--collector.filesystem.ignored-mount-points"
       - "^/(rootfs/)?(dev|etc|host|proc|run|sys|volume1)($$|/)"
-  tautulli:
+
+  cadvisor:
     <<: *defaults
-    image: lscr.io/linuxserver/tautulli:latest
-    container_name: tautulli
+    container_name: cadvisor_docker
+    image: gcr.io/cadvisor/cadvisor:latest
     networks:
       - docker
+    ports:
+      - "8888:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+
+  ## Network Services
+  cloudflared:
+    <<: *defaults
+    container_name: cloudflared
+    image: cloudflare/cloudflared:latest
+    networks:
+      - tunnel
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+    entrypoint: "cloudflared tunnel --no-autoupdate run --token ${CF_TOKEN}"
+    healthcheck:
+      test: [ "CMD", "cloudflared", "tunnel", "info" ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  nginx-proxy-manager:
+    <<: *defaults
+    container_name: nginx-proxy-manager
+    image: jc21/nginx-proxy-manager:latest
+    networks:
+      docker:
+      dockervlan:
+        ipv4_address: 192.168.1.202
+    ports:
+      - "80:80"
+      - "443:443"
+      - "81:81"
     environment:
+      - DISABLE_IPV6=true
+      - TZ=${TZ}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERCONFDIR}/reverse-proxy/data:/data
+      - ${DOCKERCONFDIR}/reverse-proxy/letsencrypt:/etc/letsencrypt
+
+  ## Automation
+  n8n:
+    <<: *defaults
+    container_name: n8n
+    image: docker.n8n.io/n8nio/n8n:latest
+    networks:
+      - docker
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=n8n.${DOMAIN_NAME}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - NODE_ENV=production
+      - WEBHOOK_URL=https://n8n.${DOMAIN_NAME}/
+      - GENERIC_TIMEZONE=${TZ}
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
     volumes:
-      - ${DOCKERCONFDIR}/tautulli/config:/config
+      - ${DOCKERCONFDIR}/n8n/home/node/.n8n:/home/node/.n8n
+      - ${DOCKERCONFDIR}/n8n/files:/files
+      - /etc/localtime:/etc/localtime:ro
+
+  ## Other Services
+  watchtower:
+    <<: *defaults
+    image: containrrr/watchtower:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /root/.docker/config.json:/config.json
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=@midnight
+
+  it-tools:
+    <<: *defaults
+    container_name: it-tools
+    image: corentinth/it-tools:latest
+    networks:
+      - docker
     ports:
-      - 8181:8181
-    restart: unless-stopped
+      - "9000:80"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+
 networks:
   tunnel:
     driver: bridge
@@ -301,5 +473,13 @@ networks:
   loki:
     driver: bridge
     name: loki
-
-
+  dockervlan:
+    driver: macvlan
+    name: dockervlan
+    driver_opts:
+      parent: eth0
+    ipam:
+      config:
+        - subnet: "192.168.1.0/24"
+          ip_range: "192.168.1.200/30"
+          gateway: "192.168.1.1"
