@@ -77,7 +77,7 @@ docker ps
 
 ## 🖥️ Additional Stack: NAS Deployment
 
-This repository also includes a **secondary stack** designed to run on a NAS. This stack is optimized for storage and lightweight services, complementing the primary stack running on a faster computer server.
+This repository also includes a **secondary stack** designed to run on a NAS. I do this so that the downloaders are closer to the disks.
 
 ### Deployment Instructions for NAS Stack
 
